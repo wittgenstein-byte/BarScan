@@ -92,9 +92,20 @@ function showFlash(text) {
 
 // ── Add record ────────────────────────────────────
 function addRecord(serial, type = 'scanned', model = '') {
+  const sTrim = serial.trim();
+  
+  // Unique Check: ตรวจสอบว่ามีข้อมูลนี้แล้วหรือไม่ (ป้องกันข้อมูลซ้ำแบบ Global)
+  const isDuplicate = state.records.some(r => r.serial === sTrim);
+  if (isDuplicate) {
+    showToast('สแกนซ้ำ: มีข้อมูลนี้ในรายการแล้ว', 'error');
+    showFlash('ข้อมูลซ้ำ!');
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); // สั่นเตือนเป็นจังหวะ error
+    return;
+  }
+
   const record = {
     id: Date.now() + Math.random(),
-    serial: serial.trim(),
+    serial: sTrim,
     model: model.trim(),
     type,
     ts: new Date().toISOString(),
@@ -104,8 +115,8 @@ function addRecord(serial, type = 'scanned', model = '') {
   saveRecords();
   updateStats();
   renderRecords();
-  showFlash('✓ ' + serial);
-  showToast('Captured: ' + serial, 'success');
+  showFlash('✓ ' + sTrim);
+  showToast('Captured: ' + sTrim, 'success');
 
   // Flash new item
   const firstItem = els.recordsList.firstElementChild;
@@ -478,12 +489,21 @@ function submitEdit() {
   const serial = els.editSerialInput.value.trim();
   if (!serial) { els.editError.textContent = 'กรุณากรอก Serial / Barcode Number'; return; }
   if (serial.length < 2) { els.editError.textContent = 'สั้นเกินไป – ขั้นต่ำ 2 ตัวอักษร'; return; }
+  
+  // Unique Check สำหรับหน้า Edit
+  const isDuplicate = state.records.some(r => r.serial === serial && r.id !== editingId);
+  if (isDuplicate) {
+    els.editError.textContent = 'ข้อมูลซ้ำ! มี Serial นี้อยู่ในรายการแล้ว';
+    return;
+  }
+
   const model = els.editModelInput.value.trim();
   const rec = state.records.find(r => r.id === editingId);
   if (!rec) return;
   rec.serial = serial;
   rec.model = model;
   saveRecords();
+  updateStats();
   renderRecords();
   closeEditModal();
   showToast('บันทึกเรียบร้อย', 'success');
