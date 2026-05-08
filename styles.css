@@ -277,6 +277,12 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .record-meta { font-size: .72rem; color: var(--text-3); margin-top: 2px; }
+.record-model {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .78rem; font-weight: 600;
+  color: #a29bff; margin-bottom: 3px;
+}
+.record-model::before { content: '⬡'; font-size: .7rem; }
 .record-type-badge {
   font-size: .65rem; padding: 2px 7px;
   border-radius: 20px; font-weight: 600;
@@ -338,6 +344,7 @@ body {
 .modal-close:hover { background: rgba(255,255,255,.1); color: var(--text-1); }
 .modal-body { padding: 20px; }
 .field-label { display: block; font-size: .8rem; font-weight: 600; color: var(--text-2); margin-bottom: 8px; }
+.field-optional { font-size: .72rem; font-weight: 400; color: var(--text-3); }
 .field-input {
   width: 100%; padding: 13px 14px;
   background: var(--bg-3); border: 1px solid var(--glass-border);

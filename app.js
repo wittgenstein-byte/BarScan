@@ -34,6 +34,16 @@ const els = {
   btnManual: $('btn-manual'),
   btnExport: $('btn-export'),
   btnClearAll: $('btn-clear-all'),
+  // Manual modal extras
+  manualModelInput: $('input-manual-model'),
+  // Edit modal
+  editModal: $('edit-modal'),
+  editModelInput: $('input-edit-model'),
+  editSerialInput: $('input-edit-serial'),
+  editError: $('edit-error'),
+  btnCloseEdit: $('btn-close-edit'),
+  btnCancelEdit: $('btn-cancel-edit'),
+  btnSubmitEdit: $('btn-submit-edit'),
   statTotal: $('stat-total'),
   statSession: $('stat-session'),
   statUnique: $('stat-unique'),
@@ -81,10 +91,11 @@ function showFlash(text) {
 }
 
 // ── Add record ────────────────────────────────────
-function addRecord(serial, type = 'scanned') {
+function addRecord(serial, type = 'scanned', model = '') {
   const record = {
     id: Date.now() + Math.random(),
     serial: serial.trim(),
+    model: model.trim(),
     type,
     ts: new Date().toISOString(),
   };
@@ -149,15 +160,25 @@ function renderRecords() {
     li.className = 'record-item';
     li.setAttribute('role', 'listitem');
     li.dataset.id = rec.id;
+    const modelHtml = rec.model
+      ? `<div class="record-model">${escHtml(rec.model)}</div>`
+      : '';
     li.innerHTML = `
       <div class="record-index">${filtered.length - idx}</div>
       <div class="record-body">
+        ${modelHtml}
         <div class="record-serial">${escHtml(rec.serial)}</div>
         <div class="record-meta">
           <span class="record-type-badge">${rec.type}</span>${fmtDate(rec.ts)}
         </div>
       </div>
       <div class="record-actions">
+        <button class="rec-btn edit-btn" title="แก้ไข" aria-label="แก้ไขรายการ">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
         <button class="rec-btn copy-btn" title="Copy" aria-label="Copy ${escHtml(rec.serial)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -171,6 +192,7 @@ function renderRecords() {
         </button>
       </div>`;
 
+    li.querySelector('.edit-btn').addEventListener('click', () => openEditModal(rec.id));
     li.querySelector('.copy-btn').addEventListener('click', () => copySerial(rec.serial));
     li.querySelector('.delete-btn').addEventListener('click', () => deleteRecord(rec.id));
     els.recordsList.appendChild(li);
@@ -378,10 +400,10 @@ function handleDetected(value, format) {
 
 // ── Export CSV ────────────────────────────────────
 function exportCSV() {
-  if (state.records.length === 0) { showToast('No records to export', 'error'); return; }
-  const rows = [['#', 'Serial / Barcode', 'Type', 'Timestamp']];
+  if (state.records.length === 0) { showToast('ไม่มีรายการที่จะ export', 'error'); return; }
+  const rows = [['#', 'ชื่อรุ่น', 'Serial / Barcode', 'Type', 'Timestamp']];
   state.records.forEach((r, i) => {
-    rows.push([i + 1, r.serial, r.type, new Date(r.ts).toLocaleString()]);
+    rows.push([i + 1, r.model || '', r.serial, r.type, new Date(r.ts).toLocaleString()]);
   });
   const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -397,8 +419,9 @@ function exportCSV() {
 function openModal() {
   els.modal.classList.add('open');
   els.manualInput.value = '';
+  els.manualModelInput.value = '';
   els.manualError.textContent = '';
-  setTimeout(() => els.manualInput.focus(), 350);
+  setTimeout(() => els.manualModelInput.focus(), 350);
 }
 
 function closeModal() {
@@ -407,10 +430,45 @@ function closeModal() {
 
 function submitManual() {
   const val = els.manualInput.value.trim();
-  if (!val) { els.manualError.textContent = 'Please enter a serial or barcode number'; return; }
-  if (val.length < 2) { els.manualError.textContent = 'Too short – minimum 2 characters'; return; }
-  addRecord(val, 'manual');
+  if (!val) { els.manualError.textContent = 'กรุณากรอก Serial / Barcode Number'; return; }
+  if (val.length < 2) { els.manualError.textContent = 'สั้นเกินไป – ขั้นต่ำ 2 ตัวอักษร'; return; }
+  const model = els.manualModelInput.value.trim();
+  addRecord(val, 'manual', model);
   closeModal();
+}
+
+// ── Edit modal ────────────────────────────────────
+let editingId = null;
+
+function openEditModal(id) {
+  const rec = state.records.find(r => r.id === id);
+  if (!rec) return;
+  editingId = id;
+  els.editModelInput.value = rec.model || '';
+  els.editSerialInput.value = rec.serial || '';
+  els.editError.textContent = '';
+  els.editModal.classList.add('open');
+  setTimeout(() => els.editModelInput.focus(), 350);
+}
+
+function closeEditModal() {
+  els.editModal.classList.remove('open');
+  editingId = null;
+}
+
+function submitEdit() {
+  const serial = els.editSerialInput.value.trim();
+  if (!serial) { els.editError.textContent = 'กรุณากรอก Serial / Barcode Number'; return; }
+  if (serial.length < 2) { els.editError.textContent = 'สั้นเกินไป – ขั้นต่ำ 2 ตัวอักษร'; return; }
+  const model = els.editModelInput.value.trim();
+  const rec = state.records.find(r => r.id === editingId);
+  if (!rec) return;
+  rec.serial = serial;
+  rec.model = model;
+  saveRecords();
+  renderRecords();
+  closeEditModal();
+  showToast('บันทึกเรียบร้อย', 'success');
 }
 
 // ── Event listeners ───────────────────────────────
@@ -440,6 +498,13 @@ els.btnCancelModal.addEventListener('click', closeModal);
 els.btnSubmitManual.addEventListener('click', submitManual);
 els.manualInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitManual(); });
 els.modal.addEventListener('click', e => { if (e.target === els.modal) closeModal(); });
+
+// Edit modal events
+els.btnCloseEdit.addEventListener('click', closeEditModal);
+els.btnCancelEdit.addEventListener('click', closeEditModal);
+els.btnSubmitEdit.addEventListener('click', submitEdit);
+els.editSerialInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitEdit(); });
+els.editModal.addEventListener('click', e => { if (e.target === els.editModal) closeEditModal(); });
 
 // ── Init ──────────────────────────────────────────
 (function init() {

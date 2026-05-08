@@ -187,20 +187,44 @@
   </div>
 
   <!-- ── Manual Entry Modal ────────────────────────────────── -->
+  <!-- ── Manual Entry Modal ────────────────────────────────── -->
   <div class="modal-backdrop" id="manual-modal" aria-modal="true" role="dialog" aria-label="Manual entry">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title">Manual Entry</h3>
+        <h3 class="modal-title">เพิ่มรายการ</h3>
         <button class="modal-close" id="btn-close-modal" aria-label="Close modal">✕</button>
       </div>
       <div class="modal-body">
-        <label class="field-label" for="input-manual">Serial / Barcode Number</label>
+        <label class="field-label" for="input-manual-model">ชื่อรุ่น <span class="field-optional">(ไม่บังคับ)</span></label>
+        <input id="input-manual-model" class="field-input" type="text" placeholder="เช่น HP LaserJet Pro M404" autocomplete="off" />
+        <label class="field-label" for="input-manual" style="margin-top:14px">Serial / Barcode Number</label>
         <input id="input-manual" class="field-input" type="text" placeholder="e.g. SN-2024-001234" autocomplete="off" />
         <p class="field-error" id="manual-error" role="alert" aria-live="polite"></p>
       </div>
       <div class="modal-footer">
-        <button class="btn-ghost" id="btn-cancel-modal">Cancel</button>
-        <button class="btn-primary small" id="btn-submit-manual">Add Record</button>
+        <button class="btn-ghost" id="btn-cancel-modal">ยกเลิก</button>
+        <button class="btn-primary small" id="btn-submit-manual">เพิ่มรายการ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Edit Record Modal ─────────────────────────────────── -->
+  <div class="modal-backdrop" id="edit-modal" aria-modal="true" role="dialog" aria-label="Edit record">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">แก้ไขรายการ</h3>
+        <button class="modal-close" id="btn-close-edit" aria-label="Close modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field-label" for="input-edit-model">ชื่อรุ่น <span class="field-optional">(ไม่บังคับ)</span></label>
+        <input id="input-edit-model" class="field-input" type="text" placeholder="เช่น HP LaserJet Pro M404" autocomplete="off" />
+        <label class="field-label" for="input-edit-serial" style="margin-top:14px">Serial / Barcode Number</label>
+        <input id="input-edit-serial" class="field-input" type="text" placeholder="e.g. SN-2024-001234" autocomplete="off" />
+        <p class="field-error" id="edit-error" role="alert" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="btn-cancel-edit">ยกเลิก</button>
+        <button class="btn-primary small" id="btn-submit-edit">บันทึก</button>
       </div>
     </div>
   </div>
