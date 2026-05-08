@@ -16,6 +16,7 @@ const state = {
   filterText: '',
   toastTimer: null,
   flashTimer: null,
+  isModelLocked: false,
 };
 
 function saveConfig() {
@@ -41,6 +42,9 @@ const els = {
   btnClearAll: $('btn-clear-all'),
   // Manual modal extras
   manualModelInput: $('input-manual-model'),
+  // Sticky model
+  stickyModelInput: $('input-sticky-model'),
+  btnLockModel: $('btn-lock-model'),
   // Edit modal
   editModal: $('edit-modal'),
   editModelInput: $('input-edit-model'),
@@ -106,6 +110,12 @@ function showFlash(text) {
 // ── Add record ────────────────────────────────────
 function addRecord(serial, type = 'scanned', model = '') {
   const sTrim = serial.trim();
+  let finalModel = model.trim();
+  
+  // Apply sticky model if locked and no specific model was provided
+  if (!finalModel && state.isModelLocked) {
+    finalModel = els.stickyModelInput.value.trim();
+  }
   
   // Unique Check: ตรวจสอบว่ามีข้อมูลนี้แล้วหรือไม่ (ป้องกันข้อมูลซ้ำแบบ Global)
   const isDuplicate = state.records.some(r => r.serial === sTrim);
@@ -119,7 +129,7 @@ function addRecord(serial, type = 'scanned', model = '') {
   const record = {
     id: Date.now() + Math.random(),
     serial: sTrim,
-    model: model.trim(),
+    model: finalModel,
     type,
     ts: new Date().toISOString(),
   };
@@ -579,6 +589,37 @@ els.btnClearAll.addEventListener('click', () => {
 els.searchInput.addEventListener('input', e => {
   state.filterText = e.target.value;
   renderRecords();
+});
+
+// Sticky Model Lock Event
+els.btnLockModel.addEventListener('click', () => {
+  const isLocked = !state.isModelLocked;
+  const val = els.stickyModelInput.value.trim();
+  
+  if (isLocked && !val) {
+    showToast('กรุณาระบุชื่อรุ่นก่อนล็อค', 'error');
+    els.stickyModelInput.focus();
+    return;
+  }
+  
+  state.isModelLocked = isLocked;
+  els.stickyModelInput.disabled = isLocked;
+  els.btnLockModel.classList.toggle('locked', isLocked);
+  
+  if (isLocked) {
+    els.btnLockModel.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>`;
+    showToast('ล็อคชื่อรุ่นแล้ว (' + val + ')', 'success');
+  } else {
+    els.btnLockModel.innerHTML = `
+      <svg class="icon-unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+      </svg>`;
+    showToast('ปลดล็อคชื่อรุ่น', '');
+    setTimeout(() => els.stickyModelInput.focus(), 100);
+  }
 });
 
 els.btnCloseModal.addEventListener('click', closeModal);

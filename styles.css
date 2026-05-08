@@ -208,6 +208,42 @@ body {
 .aux-btn:disabled { opacity: .35; cursor: not-allowed; }
 .aux-btn.torch-on { background: rgba(255,230,50,.15); color: #ffe032; border-color: #ffe032; }
 
+/* Sticky Model Bar */
+.sticky-model-bar {
+  margin: 14px 16px 0;
+  padding: 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+}
+.sticky-label {
+  display: block; font-size: .75rem; font-weight: 600; color: var(--text-2); margin-bottom: 6px;
+}
+.sticky-input-group {
+  display: flex; gap: 8px;
+}
+.sticky-input {
+  flex: 1; min-width: 0; padding: 10px 12px;
+  background: var(--bg-2); border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm); color: var(--accent); font-weight: 600;
+  font-family: 'JetBrains Mono', monospace; font-size: .95rem;
+  outline: none; transition: all .2s;
+}
+.sticky-input:focus { border-color: var(--primary); }
+.sticky-input:disabled { opacity: 0.8; background: var(--bg-3); border-color: transparent; }
+.sticky-btn {
+  width: 42px; height: 42px; flex-shrink: 0;
+  border-radius: var(--radius-sm); border: 1px solid var(--glass-border);
+  background: var(--glass); color: var(--text-2);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .2s;
+}
+.sticky-btn svg { width: 18px; height: 18px; }
+.sticky-btn:hover { background: rgba(255,255,255,.1); color: var(--text-1); }
+.sticky-btn.locked {
+  background: rgba(0,229,200,.15); color: var(--accent); border-color: var(--accent);
+}
+
 /* Stats bar */
 .stats-bar {
   display: flex; align-items: center; justify-content: space-around;
