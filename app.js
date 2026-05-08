@@ -1,0 +1,454 @@
+/* ───────────────────────────────────────────────
+   BarScan – app.js
+   Barcode scanner with ZXing + BarcodeDetector API
+─────────────────────────────────────────────── */
+
+// ── State ────────────────────────────────────────
+const state = {
+  records: JSON.parse(localStorage.getItem('barscan_records') || '[]'),
+  sessionCount: 0,
+  isScanning: false,
+  stream: null,
+  facingMode: 'environment',
+  torchOn: false,
+  codeReader: null,
+  filterText: '',
+  toastTimer: null,
+  flashTimer: null,
+};
+
+// ── DOM refs ─────────────────────────────────────
+const $ = id => document.getElementById(id);
+const els = {
+  video: $('camera-feed'),
+  overlay: $('scan-overlay'),
+  idle: $('camera-idle'),
+  idleTitle: $('idle-title'),
+  idleSub: $('idle-sub'),
+  flashBadge: $('flash-badge'),
+  scanLine: $('scan-line'),
+  btnToggle: $('btn-toggle-camera'),
+  btnLabel: $('btn-camera-label'),
+  btnFlip: $('btn-flip-camera'),
+  btnTorch: $('btn-torch'),
+  btnManual: $('btn-manual'),
+  btnExport: $('btn-export'),
+  btnClearAll: $('btn-clear-all'),
+  statTotal: $('stat-total'),
+  statSession: $('stat-session'),
+  statUnique: $('stat-unique'),
+  recordsList: $('records-list'),
+  emptyState: $('empty-state'),
+  searchInput: $('input-search'),
+  modal: $('manual-modal'),
+  manualInput: $('input-manual'),
+  manualError: $('manual-error'),
+  btnCloseModal: $('btn-close-modal'),
+  btnCancelModal: $('btn-cancel-modal'),
+  btnSubmitManual: $('btn-submit-manual'),
+  toast: $('toast'),
+};
+
+// ── Persist ───────────────────────────────────────
+function saveRecords() {
+  localStorage.setItem('barscan_records', JSON.stringify(state.records));
+}
+
+// ── Stats ─────────────────────────────────────────
+function updateStats() {
+  els.statTotal.textContent = state.records.length;
+  els.statSession.textContent = state.sessionCount;
+  const unique = new Set(state.records.map(r => r.serial)).size;
+  els.statUnique.textContent = unique;
+}
+
+// ── Toast ─────────────────────────────────────────
+function showToast(msg, type = '') {
+  clearTimeout(state.toastTimer);
+  els.toast.textContent = msg;
+  els.toast.className = 'toast show' + (type ? ' ' + type : '');
+  state.toastTimer = setTimeout(() => {
+    els.toast.className = 'toast';
+  }, 2800);
+}
+
+// ── Flash badge ───────────────────────────────────
+function showFlash(text) {
+  clearTimeout(state.flashTimer);
+  els.flashBadge.textContent = text;
+  els.flashBadge.classList.add('show');
+  state.flashTimer = setTimeout(() => els.flashBadge.classList.remove('show'), 1800);
+}
+
+// ── Add record ────────────────────────────────────
+function addRecord(serial, type = 'scanned') {
+  const record = {
+    id: Date.now() + Math.random(),
+    serial: serial.trim(),
+    type,
+    ts: new Date().toISOString(),
+  };
+  state.records.unshift(record);
+  state.sessionCount++;
+  saveRecords();
+  updateStats();
+  renderRecords();
+  showFlash('✓ ' + serial);
+  showToast('Captured: ' + serial, 'success');
+
+  // Flash new item
+  const firstItem = els.recordsList.firstElementChild;
+  if (firstItem) {
+    firstItem.classList.add('new-flash');
+    setTimeout(() => firstItem.classList.remove('new-flash'), 1500);
+  }
+}
+
+// ── Delete record ─────────────────────────────────
+function deleteRecord(id) {
+  state.records = state.records.filter(r => r.id !== id);
+  saveRecords();
+  updateStats();
+  renderRecords();
+  showToast('Record deleted', 'error');
+}
+
+// ── Copy serial ───────────────────────────────────
+async function copySerial(serial) {
+  try {
+    await navigator.clipboard.writeText(serial);
+    showToast('Copied to clipboard!', 'success');
+  } catch {
+    showToast('Copy failed', 'error');
+  }
+}
+
+// ── Format date ───────────────────────────────────
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// ── Render records ────────────────────────────────
+function renderRecords() {
+  const q = state.filterText.toLowerCase();
+  const filtered = q
+    ? state.records.filter(r => r.serial.toLowerCase().includes(q))
+    : state.records;
+
+  els.recordsList.innerHTML = '';
+
+  if (filtered.length === 0) {
+    els.emptyState.classList.add('visible');
+    return;
+  }
+  els.emptyState.classList.remove('visible');
+
+  filtered.forEach((rec, idx) => {
+    const li = document.createElement('li');
+    li.className = 'record-item';
+    li.setAttribute('role', 'listitem');
+    li.dataset.id = rec.id;
+    li.innerHTML = `
+      <div class="record-index">${filtered.length - idx}</div>
+      <div class="record-body">
+        <div class="record-serial">${escHtml(rec.serial)}</div>
+        <div class="record-meta">
+          <span class="record-type-badge">${rec.type}</span>${fmtDate(rec.ts)}
+        </div>
+      </div>
+      <div class="record-actions">
+        <button class="rec-btn copy-btn" title="Copy" aria-label="Copy ${escHtml(rec.serial)}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
+        <button class="rec-btn delete-btn" title="Delete" aria-label="Delete record">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+          </svg>
+        </button>
+      </div>`;
+
+    li.querySelector('.copy-btn').addEventListener('click', () => copySerial(rec.serial));
+    li.querySelector('.delete-btn').addEventListener('click', () => deleteRecord(rec.id));
+    els.recordsList.appendChild(li);
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Camera ────────────────────────────────────────
+async function startCamera() {
+  try {
+    if (state.stream) stopCamera();
+    const constraints = {
+      video: {
+        facingMode: state.facingMode,
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    };
+    state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    els.video.srcObject = state.stream;
+    await els.video.play();
+    state.isScanning = true;
+    updateCameraUI(true);
+    enableAuxControls();
+    startDetection();
+  } catch (err) {
+    console.error('Camera error:', err);
+    let msg = 'Camera access denied';
+    if (err.name === 'NotFoundError') msg = 'No camera found on this device';
+    if (err.name === 'NotAllowedError') msg = 'Camera permission denied – allow it in browser settings';
+    setIdleState(msg, err.name === 'NotAllowedError' ? 'Grant permission and refresh the page' : 'Connect a camera and try again');
+    showToast(msg, 'error');
+  }
+}
+
+function stopCamera() {
+  stopDetection();
+  if (state.stream) {
+    state.stream.getTracks().forEach(t => t.stop());
+    state.stream = null;
+  }
+  els.video.srcObject = null;
+  state.isScanning = false;
+  state.torchOn = false;
+  updateCameraUI(false);
+  disableAuxControls();
+}
+
+function updateCameraUI(active) {
+  if (active) {
+    els.btnLabel.textContent = 'Stop Camera';
+    els.btnToggle.classList.add('stop');
+    els.overlay.classList.add('active');
+    els.idle.classList.add('hidden');
+  } else {
+    els.btnLabel.textContent = 'Start Camera';
+    els.btnToggle.classList.remove('stop');
+    els.overlay.classList.remove('active');
+    els.idle.classList.remove('hidden');
+    setIdleState('Camera Stopped', 'Tap the button below to start scanning');
+    els.btnTorch.classList.remove('torch-on');
+  }
+}
+
+function setIdleState(title, sub) {
+  els.idleTitle.textContent = title;
+  els.idleSub.textContent = sub;
+}
+
+function enableAuxControls() {
+  els.btnFlip.disabled = false;
+  // Torch only if supported
+  const track = state.stream?.getVideoTracks()[0];
+  const caps = track?.getCapabilities?.();
+  els.btnTorch.disabled = !(caps && caps.torch);
+}
+
+function disableAuxControls() {
+  els.btnFlip.disabled = true;
+  els.btnTorch.disabled = true;
+}
+
+async function flipCamera() {
+  state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment';
+  await startCamera();
+}
+
+async function toggleTorch() {
+  const track = state.stream?.getVideoTracks()[0];
+  if (!track) return;
+  state.torchOn = !state.torchOn;
+  try {
+    await track.applyConstraints({ advanced: [{ torch: state.torchOn }] });
+    els.btnTorch.classList.toggle('torch-on', state.torchOn);
+    showToast(state.torchOn ? 'Flashlight ON' : 'Flashlight OFF');
+  } catch {
+    state.torchOn = false;
+    showToast('Torch not supported on this device', 'error');
+  }
+}
+
+// ── Detection ─────────────────────────────────────
+let detectionActive = false;
+let lastScanned = '';
+let lastScannedTs = 0;
+const COOLDOWN_MS = 2500;
+
+function startDetection() {
+  detectionActive = true;
+  // Try native BarcodeDetector first
+  if ('BarcodeDetector' in window) {
+    runNativeDetection();
+  } else if (window.ZXing) {
+    runZxingDetection();
+  } else {
+    showToast('No barcode detection engine available', 'error');
+  }
+}
+
+function stopDetection() {
+  detectionActive = false;
+  if (state.codeReader) {
+    try { state.codeReader.reset(); } catch (_) {}
+    state.codeReader = null;
+  }
+}
+
+// Native BarcodeDetector (Chrome Android / Desktop)
+async function runNativeDetection() {
+  let detector;
+  try {
+    detector = new BarcodeDetector({
+      formats: [
+        'code_128','code_39','code_93','codabar',
+        'ean_13','ean_8','upc_a','upc_e',
+        'itf','aztec','data_matrix','pdf417','qr_code',
+      ],
+    });
+  } catch {
+    detector = new BarcodeDetector();
+  }
+
+  const tick = async () => {
+    if (!detectionActive) return;
+    if (els.video.readyState === els.video.HAVE_ENOUGH_DATA) {
+      try {
+        const barcodes = await detector.detect(els.video);
+        if (barcodes.length > 0) {
+          const code = barcodes[0];
+          handleDetected(code.rawValue, code.format || 'barcode');
+        }
+      } catch (_) { /* ignore */ }
+    }
+    if (detectionActive) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+// ZXing fallback
+function runZxingDetection() {
+  try {
+    const hints = new Map();
+    const formats = [
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.QR_CODE,
+      ZXing.BarcodeFormat.DATA_MATRIX,
+      ZXing.BarcodeFormat.PDF_417,
+      ZXing.BarcodeFormat.ITF,
+    ];
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+    state.codeReader = new ZXing.BrowserMultiFormatReader(hints);
+    state.codeReader.decodeFromVideoElement(els.video, (result, err) => {
+      if (!detectionActive) return;
+      if (result) handleDetected(result.getText(), result.getBarcodeFormat?.()?.toString() || 'barcode');
+    });
+  } catch (e) {
+    console.error('ZXing error', e);
+    showToast('Barcode engine failed to load', 'error');
+  }
+}
+
+function handleDetected(value, format) {
+  if (!value || !value.trim()) return;
+  const now = Date.now();
+  if (value === lastScanned && now - lastScannedTs < COOLDOWN_MS) return;
+  lastScanned = value;
+  lastScannedTs = now;
+
+  // Vibrate feedback
+  if (navigator.vibrate) navigator.vibrate([60, 30, 60]);
+
+  addRecord(value.trim(), format || 'scanned');
+}
+
+// ── Export CSV ────────────────────────────────────
+function exportCSV() {
+  if (state.records.length === 0) { showToast('No records to export', 'error'); return; }
+  const rows = [['#', 'Serial / Barcode', 'Type', 'Timestamp']];
+  state.records.forEach((r, i) => {
+    rows.push([i + 1, r.serial, r.type, new Date(r.ts).toLocaleString()]);
+  });
+  const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `barscan_${Date.now()}.csv`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  showToast('Exported ' + state.records.length + ' records', 'success');
+}
+
+// ── Manual modal ──────────────────────────────────
+function openModal() {
+  els.modal.classList.add('open');
+  els.manualInput.value = '';
+  els.manualError.textContent = '';
+  setTimeout(() => els.manualInput.focus(), 350);
+}
+
+function closeModal() {
+  els.modal.classList.remove('open');
+}
+
+function submitManual() {
+  const val = els.manualInput.value.trim();
+  if (!val) { els.manualError.textContent = 'Please enter a serial or barcode number'; return; }
+  if (val.length < 2) { els.manualError.textContent = 'Too short – minimum 2 characters'; return; }
+  addRecord(val, 'manual');
+  closeModal();
+}
+
+// ── Event listeners ───────────────────────────────
+els.btnToggle.addEventListener('click', () => {
+  if (state.isScanning) stopCamera(); else startCamera();
+});
+
+els.btnFlip.addEventListener('click', flipCamera);
+els.btnTorch.addEventListener('click', toggleTorch);
+els.btnManual.addEventListener('click', openModal);
+els.btnExport.addEventListener('click', exportCSV);
+els.btnClearAll.addEventListener('click', () => {
+  if (state.records.length === 0) { showToast('Nothing to clear', 'error'); return; }
+  if (!confirm(`Delete all ${state.records.length} records?`)) return;
+  state.records = [];
+  saveRecords(); updateStats(); renderRecords();
+  showToast('All records cleared');
+});
+
+els.searchInput.addEventListener('input', e => {
+  state.filterText = e.target.value;
+  renderRecords();
+});
+
+els.btnCloseModal.addEventListener('click', closeModal);
+els.btnCancelModal.addEventListener('click', closeModal);
+els.btnSubmitManual.addEventListener('click', submitManual);
+els.manualInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitManual(); });
+els.modal.addEventListener('click', e => { if (e.target === els.modal) closeModal(); });
+
+// ── Init ──────────────────────────────────────────
+(function init() {
+  updateStats();
+  renderRecords();
+  // Check camera availability
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setIdleState('Camera Not Available', 'Your browser does not support camera access. Try Chrome on Android.');
+    els.btnToggle.disabled = true;
+    showToast('Camera API not supported in this browser', 'error');
+  }
+})();
