@@ -38,6 +38,12 @@
         <span class="logo-text">BarScan</span>
       </div>
       <div class="header-actions">
+        <button id="btn-settings" class="icon-btn" title="ตั้งค่า" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
         <button id="btn-export" class="icon-btn" title="Export CSV" aria-label="Export CSV">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
             stroke-linejoin="round">
@@ -225,6 +231,27 @@
       <div class="modal-footer">
         <button class="btn-ghost" id="btn-cancel-edit">ยกเลิก</button>
         <button class="btn-primary small" id="btn-submit-edit">บันทึก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings Modal ────────────────────────────────────── -->
+  <div class="modal-backdrop" id="settings-modal" aria-modal="true" role="dialog" aria-label="Settings">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">ตั้งค่าการสแกน (Settings)</h3>
+        <button class="modal-close" id="btn-close-settings" aria-label="Close settings">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field-label" for="input-delay-double">ระยะเวลาป้องกันการสแกนซ้ำ (Double Scan Delay) <br><span class="field-optional">หน่วยเป็นมิลลิวินาที (ms) ค่าแนะนำ: 2000</span></label>
+        <input id="input-delay-double" class="field-input" type="number" min="0" step="100" placeholder="2000" autocomplete="off" />
+        
+        <label class="field-label" for="input-delay-group" style="margin-top:14px">เวลาหน่วงรับค่าจากเครื่องสแกน (Keystroke Delay) <br><span class="field-optional">หน่วยเป็นมิลลิวินาที (ms) ค่าแนะนำ: 500</span></label>
+        <input id="input-delay-group" class="field-input" type="number" min="0" step="50" placeholder="500" autocomplete="off" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="btn-cancel-settings">ยกเลิก</button>
+        <button class="btn-primary small" id="btn-save-settings">บันทึกตั้งค่า</button>
       </div>
     </div>
   </div>

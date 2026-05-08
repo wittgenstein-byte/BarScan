@@ -6,6 +6,7 @@
 // ── State ────────────────────────────────────────
 const state = {
   records: JSON.parse(localStorage.getItem('barscan_records') || '[]'),
+  config: JSON.parse(localStorage.getItem('barscan_config') || '{"doubleScanMs": 2000, "hwGroupMs": 500}'),
   sessionCount: 0,
   isScanning: false,
   stream: null,
@@ -16,6 +17,10 @@ const state = {
   toastTimer: null,
   flashTimer: null,
 };
+
+function saveConfig() {
+  localStorage.setItem('barscan_config', JSON.stringify(state.config));
+}
 
 // ── DOM refs ─────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -56,6 +61,14 @@ const els = {
   btnCloseModal: $('btn-close-modal'),
   btnCancelModal: $('btn-cancel-modal'),
   btnSubmitManual: $('btn-submit-manual'),
+  // Settings modal
+  btnSettings: $('btn-settings'),
+  settingsModal: $('settings-modal'),
+  inputDelayDouble: $('input-delay-double'),
+  inputDelayGroup: $('input-delay-group'),
+  btnCloseSettings: $('btn-close-settings'),
+  btnCancelSettings: $('btn-cancel-settings'),
+  btnSaveSettings: $('btn-save-settings'),
   toast: $('toast'),
 };
 
@@ -313,7 +326,6 @@ async function toggleTorch() {
 let detectionActive = false;
 let lastScanned = '';
 let lastScannedTs = 0;
-const COOLDOWN_MS = 2500;
 
 function startDetection() {
   detectionActive = true;
@@ -399,7 +411,7 @@ function runZxingDetection() {
 function handleDetected(value, format) {
   if (!value || !value.trim()) return;
   const now = Date.now();
-  if (value === lastScanned && now - lastScannedTs < COOLDOWN_MS) return;
+  if (value === lastScanned && now - lastScannedTs < state.config.doubleScanMs) return;
   lastScanned = value;
   lastScannedTs = now;
 
@@ -449,7 +461,7 @@ function submitManual() {
   
   // Software Logic (Buffer Check): ป้องกัน Hardware Scanner ยิงรัวเข้าช่อง Input
   const now = Date.now();
-  if (val === lastManualSubmit && (now - lastManualSubmitTs) < 2000) {
+  if (val === lastManualSubmit && (now - lastManualSubmitTs) < state.config.doubleScanMs) {
     els.manualInput.value = '';
     els.manualInput.blur(); // Focus Management: เอา Cursor ออกเพื่อกันสแกนซ้ำ
     closeModal();
@@ -522,19 +534,19 @@ window.addEventListener('keydown', (e) => {
   if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
     hwInputBuffer += e.key;
     clearTimeout(hwInputTimer);
-    // ถ้ารับค่าช้ากว่า 100ms ต่อตัวอักษร ถือว่าไม่ใช่เครื่องสแกนเนอร์ (เครื่องสแกนจะพิมพ์ไวมาก)
+    // ถ้ารับค่าช้ากว่าตั้งค่า ต่อตัวอักษร ถือว่าไม่ใช่เครื่องสแกนเนอร์
     hwInputTimer = setTimeout(() => {
       hwInputBuffer = ''; 
-    }, 100); 
+    }, state.config.hwGroupMs); 
   } else if (e.key === 'Enter' && hwInputBuffer.length >= 2) {
     e.preventDefault();
     const scannedVal = hwInputBuffer;
     hwInputBuffer = '';
     clearTimeout(hwInputTimer);
 
-    // Buffer Check: ป้องกันการสแกนรัว (Double Scan) ภายใน 2 วินาที (2000ms)
+    // Buffer Check: ป้องกันการสแกนรัว (Double Scan)
     const now = Date.now();
-    if (scannedVal === lastGlobalScanned && (now - lastGlobalScannedTs) < 2000) {
+    if (scannedVal === lastGlobalScanned && (now - lastGlobalScannedTs) < state.config.doubleScanMs) {
       showToast('ป้องกันสแกนซ้ำ (Double Scan)', 'error');
       return;
     }
@@ -581,6 +593,35 @@ els.btnCancelEdit.addEventListener('click', closeEditModal);
 els.btnSubmitEdit.addEventListener('click', submitEdit);
 els.editSerialInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitEdit(); });
 els.editModal.addEventListener('click', e => { if (e.target === els.editModal) closeEditModal(); });
+
+// Settings modal events
+function openSettingsModal() {
+  els.inputDelayDouble.value = state.config.doubleScanMs;
+  els.inputDelayGroup.value = state.config.hwGroupMs;
+  els.settingsModal.classList.add('open');
+}
+
+function closeSettingsModal() {
+  els.settingsModal.classList.remove('open');
+}
+
+function saveSettings() {
+  const doubleMs = parseInt(els.inputDelayDouble.value, 10);
+  const groupMs = parseInt(els.inputDelayGroup.value, 10);
+  
+  if (!isNaN(doubleMs) && doubleMs >= 0) state.config.doubleScanMs = doubleMs;
+  if (!isNaN(groupMs) && groupMs >= 0) state.config.hwGroupMs = groupMs;
+  
+  saveConfig();
+  closeSettingsModal();
+  showToast('บันทึกการตั้งค่าแล้ว', 'success');
+}
+
+els.btnSettings.addEventListener('click', openSettingsModal);
+els.btnCloseSettings.addEventListener('click', closeSettingsModal);
+els.btnCancelSettings.addEventListener('click', closeSettingsModal);
+els.btnSaveSettings.addEventListener('click', saveSettings);
+els.settingsModal.addEventListener('click', e => { if (e.target === els.settingsModal) closeSettingsModal(); });
 
 // ── Init ──────────────────────────────────────────
 (function init() {
