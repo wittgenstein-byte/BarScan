@@ -428,12 +428,30 @@ function closeModal() {
   els.modal.classList.remove('open');
 }
 
+let lastManualSubmit = '';
+let lastManualSubmitTs = 0;
+
 function submitManual() {
   const val = els.manualInput.value.trim();
   if (!val) { els.manualError.textContent = 'กรุณากรอก Serial / Barcode Number'; return; }
   if (val.length < 2) { els.manualError.textContent = 'สั้นเกินไป – ขั้นต่ำ 2 ตัวอักษร'; return; }
+  
+  // Software Logic (Buffer Check): ป้องกัน Hardware Scanner ยิงรัวเข้าช่อง Input
+  const now = Date.now();
+  if (val === lastManualSubmit && (now - lastManualSubmitTs) < 2000) {
+    els.manualInput.value = '';
+    els.manualInput.blur(); // Focus Management: เอา Cursor ออกเพื่อกันสแกนซ้ำ
+    closeModal();
+    return;
+  }
+  lastManualSubmit = val;
+  lastManualSubmitTs = now;
+
   const model = els.manualModelInput.value.trim();
   addRecord(val, 'manual', model);
+  
+  els.manualInput.value = '';
+  els.manualInput.blur(); // Focus Management: สแกนเสร็จให้ Unfocus ทันที
   closeModal();
 }
 
@@ -470,6 +488,44 @@ function submitEdit() {
   closeEditModal();
   showToast('บันทึกเรียบร้อย', 'success');
 }
+
+// ── Hardware Scanner (External USB/Bluetooth) ───────────────────
+let hwInputBuffer = '';
+let hwInputTimer = null;
+let lastGlobalScanned = '';
+let lastGlobalScannedTs = 0;
+
+window.addEventListener('keydown', (e) => {
+  // ถ้าเคอร์เซอร์อยู่ในช่อง Input ให้ปล่อยเป็นหน้าที่ของ Event ในช่องนั้น (เช่น submitManual)
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    hwInputBuffer += e.key;
+    clearTimeout(hwInputTimer);
+    // ถ้ารับค่าช้ากว่า 100ms ต่อตัวอักษร ถือว่าไม่ใช่เครื่องสแกนเนอร์ (เครื่องสแกนจะพิมพ์ไวมาก)
+    hwInputTimer = setTimeout(() => {
+      hwInputBuffer = ''; 
+    }, 100); 
+  } else if (e.key === 'Enter' && hwInputBuffer.length >= 2) {
+    e.preventDefault();
+    const scannedVal = hwInputBuffer;
+    hwInputBuffer = '';
+    clearTimeout(hwInputTimer);
+
+    // Buffer Check: ป้องกันการสแกนรัว (Double Scan) ภายใน 2 วินาที (2000ms)
+    const now = Date.now();
+    if (scannedVal === lastGlobalScanned && (now - lastGlobalScannedTs) < 2000) {
+      showToast('ป้องกันสแกนซ้ำ (Double Scan)', 'error');
+      return;
+    }
+    
+    lastGlobalScanned = scannedVal;
+    lastGlobalScannedTs = now;
+
+    // เพิ่มข้อมูลจากเครื่องสแกนฮาร์ดแวร์
+    addRecord(scannedVal, 'hw-scanner', '');
+  }
+});
 
 // ── Event listeners ───────────────────────────────
 els.btnToggle.addEventListener('click', () => {
