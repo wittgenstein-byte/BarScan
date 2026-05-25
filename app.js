@@ -32,12 +32,13 @@ const els = {
   idleTitle: $('idle-title'),
   idleSub: $('idle-sub'),
   flashBadge: $('flash-badge'),
-  scanLine: $('scan-line'),
   btnToggle: $('btn-toggle-camera'),
   btnLabel: $('btn-camera-label'),
   btnFlip: $('btn-flip-camera'),
   btnTorch: $('btn-torch'),
   btnManual: $('btn-manual'),
+  btnCapture: $('btn-capture'),
+  canvas: $('scan-canvas'),
   btnExport: $('btn-export'),
   btnClearAll: $('btn-clear-all'),
   // Manual modal extras
@@ -255,7 +256,7 @@ async function startCamera() {
     state.isScanning = true;
     updateCameraUI(true);
     enableAuxControls();
-    startDetection();
+    els.btnCapture.disabled = false;
   } catch (err) {
     console.error('Camera error:', err);
     let msg = 'Camera access denied';
@@ -267,7 +268,10 @@ async function startCamera() {
 }
 
 function stopCamera() {
-  stopDetection();
+  if (state.codeReader) {
+    try { state.codeReader.reset(); } catch (_) {}
+    state.codeReader = null;
+  }
   if (state.stream) {
     state.stream.getTracks().forEach(t => t.stop());
     state.stream = null;
@@ -285,6 +289,7 @@ function updateCameraUI(active) {
     els.btnToggle.classList.add('stop');
     els.overlay.classList.add('active');
     els.idle.classList.add('hidden');
+    els.btnCapture.disabled = false;
   } else {
     els.btnLabel.textContent = 'Start Camera';
     els.btnToggle.classList.remove('stop');
@@ -292,6 +297,7 @@ function updateCameraUI(active) {
     els.idle.classList.remove('hidden');
     setIdleState('Camera Stopped', 'Tap the button below to start scanning');
     els.btnTorch.classList.remove('torch-on');
+    els.btnCapture.disabled = true;
   }
 }
 
@@ -332,89 +338,83 @@ async function toggleTorch() {
   }
 }
 
-// ── Detection ─────────────────────────────────────
-let detectionActive = false;
+// ── Detection (Single-shot capture) ───────────────
 let lastScanned = '';
 let lastScannedTs = 0;
 
-function startDetection() {
-  detectionActive = true;
-  // Try native BarcodeDetector first
-  if ('BarcodeDetector' in window) {
-    runNativeDetection();
-  } else if (window.ZXing) {
-    runZxingDetection();
-  } else {
-    showToast('No barcode detection engine available', 'error');
+async function captureAndScan() {
+  if (!state.isScanning || !state.stream) {
+    showToast('Start camera first', 'error');
+    return;
   }
-}
 
-function stopDetection() {
-  detectionActive = false;
-  if (state.codeReader) {
-    try { state.codeReader.reset(); } catch (_) {}
-    state.codeReader = null;
+  const video = els.video;
+  if (video.readyState < video.HAVE_ENOUGH_DATA) {
+    showToast('Camera not ready yet', 'error');
+    return;
   }
-}
 
-// Native BarcodeDetector (Chrome Android / Desktop)
-async function runNativeDetection() {
-  let detector;
+  // Shutter flash effect
+  const flash = document.createElement('div');
+  flash.className = 'capture-flash';
+  els.video.parentElement.appendChild(flash);
+  setTimeout(() => flash.remove(), 300);
+
+  if (navigator.vibrate) navigator.vibrate(30);
+
+  // Capture current frame to canvas
+  const canvas = els.canvas;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+
+  // Run detection on the captured frame
   try {
-    detector = new BarcodeDetector({
-      formats: [
-        'code_128','code_39','code_93','codabar',
-        'ean_13','ean_8','upc_a','upc_e',
-        'itf','aztec','data_matrix','pdf417','qr_code',
-      ],
-    });
-  } catch {
-    detector = new BarcodeDetector();
-  }
-
-  const tick = async () => {
-    if (!detectionActive) return;
-    if (els.video.readyState === els.video.HAVE_ENOUGH_DATA) {
-      try {
-        const barcodes = await detector.detect(els.video);
-        if (barcodes.length > 0) {
-          const code = barcodes[0];
-          handleDetected(code.rawValue, code.format || 'barcode');
-        }
-      } catch (_) { /* ignore */ }
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({
+        formats: [
+          'code_128','code_39','code_93','codabar',
+          'ean_13','ean_8','upc_a','upc_e',
+          'itf','aztec','data_matrix','pdf417','qr_code',
+        ],
+      });
+      const barcodes = await detector.detect(canvas);
+      if (barcodes.length > 0) {
+        handleDetected(barcodes[0].rawValue, barcodes[0].format || 'barcode');
+      } else {
+        showToast('No barcode found', 'error');
+        if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+      }
+    } else if (window.ZXing) {
+      if (!state.codeReader) {
+        const hints = new Map();
+        const formats = [
+          ZXing.BarcodeFormat.CODE_128,
+          ZXing.BarcodeFormat.CODE_39,
+          ZXing.BarcodeFormat.EAN_13,
+          ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A,
+          ZXing.BarcodeFormat.UPC_E,
+          ZXing.BarcodeFormat.QR_CODE,
+          ZXing.BarcodeFormat.DATA_MATRIX,
+          ZXing.BarcodeFormat.PDF_417,
+          ZXing.BarcodeFormat.ITF,
+        ];
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        state.codeReader = new ZXing.BrowserMultiFormatReader(hints);
+      }
+      const result = await state.codeReader.decodeFromCanvas(canvas);
+      if (result) {
+        handleDetected(result.getText(), result.getBarcodeFormat?.()?.toString() || 'barcode');
+      }
+    } else {
+      showToast('No barcode detection engine available', 'error');
     }
-    if (detectionActive) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-// ZXing fallback
-function runZxingDetection() {
-  try {
-    const hints = new Map();
-    const formats = [
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.EAN_13,
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,
-      ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.QR_CODE,
-      ZXing.BarcodeFormat.DATA_MATRIX,
-      ZXing.BarcodeFormat.PDF_417,
-      ZXing.BarcodeFormat.ITF,
-    ];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-
-    state.codeReader = new ZXing.BrowserMultiFormatReader(hints);
-    state.codeReader.decodeFromVideoElement(els.video, (result, err) => {
-      if (!detectionActive) return;
-      if (result) handleDetected(result.getText(), result.getBarcodeFormat?.()?.toString() || 'barcode');
-    });
   } catch (e) {
-    console.error('ZXing error', e);
-    showToast('Barcode engine failed to load', 'error');
+    showToast('No barcode found', 'error');
+    if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
   }
 }
 
@@ -577,6 +577,7 @@ els.btnToggle.addEventListener('click', () => {
 els.btnFlip.addEventListener('click', flipCamera);
 els.btnTorch.addEventListener('click', toggleTorch);
 els.btnManual.addEventListener('click', openModal);
+els.btnCapture.addEventListener('click', captureAndScan);
 els.btnExport.addEventListener('click', exportCSV);
 els.btnClearAll.addEventListener('click', () => {
   if (state.records.length === 0) { showToast('Nothing to clear', 'error'); return; }

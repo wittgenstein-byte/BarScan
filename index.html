@@ -80,9 +80,8 @@
               <span class="corner tr"></span>
               <span class="corner bl"></span>
               <span class="corner br"></span>
-              <div class="scan-line" id="scan-line"></div>
             </div>
-            <p class="scan-hint" id="scan-hint">Align barcode within frame</p>
+            <p class="scan-hint" id="scan-hint">Align barcode &amp; tap Capture</p>
           </div>
 
           <!-- Idle / Error state -->
@@ -110,6 +109,14 @@
               <circle cx="12" cy="13" r="4" />
             </svg>
             <span id="btn-camera-label">Start Camera</span>
+          </button>
+
+          <button id="btn-capture" class="btn-capture" aria-label="Capture and scan barcode">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="12" cy="12" r="6" fill="currentColor" />
+            </svg>
+            <span>Capture</span>
           </button>
 
           <div class="aux-controls">

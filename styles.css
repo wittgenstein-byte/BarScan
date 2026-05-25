@@ -208,6 +208,33 @@ body {
 .aux-btn:disabled { opacity: .35; cursor: not-allowed; }
 .aux-btn.torch-on { background: rgba(255,230,50,.15); color: #ffe032; border-color: #ffe032; }
 
+/* Capture Button */
+.btn-capture {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 12px 20px;
+  border-radius: 50px; border: none; cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem; font-weight: 700; letter-spacing: .3px;
+  background: linear-gradient(135deg, var(--accent), #00b89f);
+  color: #0d0d1a;
+  box-shadow: 0 4px 20px var(--accent-glow);
+  transition: transform .15s, box-shadow .15s, filter .15s;
+}
+.btn-capture svg { width: 22px; height: 22px; }
+.btn-capture:hover { filter: brightness(1.12); box-shadow: 0 6px 28px var(--accent-glow); }
+.btn-capture:active { transform: scale(.97); }
+.btn-capture:disabled { opacity: .4; cursor: not-allowed; filter: none; transform: none; }
+
+/* Capture flash overlay */
+.capture-flash {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,.6);
+  pointer-events: none;
+  animation: flash-fade .3s ease-out forwards;
+  z-index: 10;
+}
+@keyframes flash-fade { 0%{opacity:1;} 100%{opacity:0;} }
+
 /* Sticky Model Bar */
 .sticky-model-bar {
   margin: 14px 16px 0;
