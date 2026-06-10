@@ -66,7 +66,20 @@ body {
 .header-logo { display: flex; align-items: center; gap: 10px; }
 .logo-icon { font-size: 1.6rem; filter: drop-shadow(0 0 8px var(--primary)); }
 .logo-text { font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, #a29bff, #00e5c8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -.5px; }
-.header-actions { display: flex; gap: 10px; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+
+/* Server status indicator */
+.server-indicator {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 20px;
+  font-size: .72rem; font-weight: 600; letter-spacing: .3px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  cursor: default; user-select: none;
+  white-space: nowrap; transition: all .3s;
+}
+.server-indicator.online  { color: var(--accent); border-color: rgba(0,229,200,.4); background: rgba(0,229,200,.08); }
+.server-indicator.offline { color: #ffd166; border-color: rgba(255,209,102,.3); background: rgba(255,209,102,.06); }
 .icon-btn {
   width: 40px; height: 40px; border-radius: 50%;
   border: 1px solid var(--glass-border);

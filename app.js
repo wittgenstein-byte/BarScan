@@ -3,6 +3,12 @@
    Barcode scanner with ZXing + BarcodeDetector API
 ─────────────────────────────────────────────── */
 
+// ── API Config ────────────────────────────────────
+// เปลี่ยน BASE_URL ให้ตรงกับ server ที่ deploy
+const API_BASE = (typeof window !== 'undefined' && window.location.port !== '')
+  ? ''           // same-origin (เมื่อ serve ผ่าน Express)
+  : 'http://localhost:3001';  // เปิดจาก file:// หรือ dev server อื่น
+
 // ── State ────────────────────────────────────────
 const state = {
   records: JSON.parse(localStorage.getItem('barscan_records') || '[]'),
@@ -17,10 +23,90 @@ const state = {
   toastTimer: null,
   flashTimer: null,
   isModelLocked: false,
+  hasServer: false,  // true เมื่อ ping server สำเร็จ
 };
+
+// ── API Helper ────────────────────────────────────
+async function apiCall(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(API_BASE + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Server Detection ─────────────────────────────
+async function detectServer() {
+  try {
+    await fetch(API_BASE + '/api/health', { signal: AbortSignal.timeout(2000) });
+    state.hasServer = true;
+    setServerIndicator(true);
+    // โหลด records จาก server แทน localStorage
+    await loadRecordsFromServer();
+    // sync settings จาก server
+    await loadSettingsFromServer();
+  } catch {
+    state.hasServer = false;
+    setServerIndicator(false);
+  }
+}
+
+function setServerIndicator(online) {
+  const el = document.getElementById('server-indicator');
+  if (!el) return;
+  el.textContent = online ? '🟢 Server' : '🟡 Offline';
+  el.title = online
+    ? 'Connected to backend server'
+    : 'No server — using localStorage';
+  el.className = 'server-indicator ' + (online ? 'online' : 'offline');
+}
+
+async function loadRecordsFromServer() {
+  try {
+    const rows = await apiCall('GET', '/api/scans');
+    // แปลง field ให้ตรงกับ format ที่ frontend ใช้
+    state.records = rows.map(r => ({
+      id:     r.id,
+      serial: r.serial,
+      model:  r.model || '',
+      type:   r.type,
+      ts:     r.ts,
+    }));
+    // sync กลับลง localStorage ด้วย
+    localStorage.setItem('barscan_records', JSON.stringify(state.records));
+    updateStats();
+    renderRecords();
+  } catch (err) {
+    console.warn('loadRecordsFromServer failed:', err);
+  }
+}
+
+async function loadSettingsFromServer() {
+  try {
+    const s = await apiCall('GET', '/api/settings');
+    state.config.doubleScanMs = s.double_scan_ms ?? state.config.doubleScanMs;
+    state.config.hwGroupMs    = s.hw_group_ms    ?? state.config.hwGroupMs;
+    localStorage.setItem('barscan_config', JSON.stringify(state.config));
+  } catch (err) {
+    console.warn('loadSettingsFromServer failed:', err);
+  }
+}
 
 function saveConfig() {
   localStorage.setItem('barscan_config', JSON.stringify(state.config));
+  // sync ขึ้น server ถ้ามี
+  if (state.hasServer) {
+    apiCall('PUT', '/api/settings', {
+      double_scan_ms: state.config.doubleScanMs,
+      hw_group_ms:    state.config.hwGroupMs,
+    }).catch(err => console.warn('saveConfig to server failed:', err));
+  }
 }
 
 // ── DOM refs ─────────────────────────────────────
@@ -109,7 +195,7 @@ function showFlash(text) {
 }
 
 // ── Add record ────────────────────────────────────
-function addRecord(serial, type = 'scanned', model = '') {
+async function addRecord(serial, type = 'scanned', model = '') {
   const sTrim = serial.trim();
   let finalModel = model.trim();
   
@@ -127,13 +213,41 @@ function addRecord(serial, type = 'scanned', model = '') {
     return;
   }
 
-  const record = {
-    id: Date.now() + Math.random(),
-    serial: sTrim,
-    model: finalModel,
-    type,
-    ts: new Date().toISOString(),
-  };
+  let record;
+
+  if (state.hasServer) {
+    // ── API mode ──────────────────────────────────
+    try {
+      record = await apiCall('POST', '/api/scans', {
+        serial: sTrim,
+        model:  finalModel,
+        type,
+      });
+      // แปลง field ts จาก server
+      record.ts = record.ts || new Date().toISOString();
+    } catch (err) {
+      console.error('addRecord API error:', err);
+      showToast('Server error — บันทึก local แทน', 'error');
+      // fallback to local
+      record = {
+        id: Date.now() + Math.random(),
+        serial: sTrim,
+        model: finalModel,
+        type,
+        ts: new Date().toISOString(),
+      };
+    }
+  } else {
+    // ── Offline mode ──────────────────────────────
+    record = {
+      id: Date.now() + Math.random(),
+      serial: sTrim,
+      model: finalModel,
+      type,
+      ts: new Date().toISOString(),
+    };
+  }
+
   state.records.unshift(record);
   state.sessionCount++;
   saveRecords();
@@ -150,8 +264,17 @@ function addRecord(serial, type = 'scanned', model = '') {
   }
 }
 
-// ── Delete record ─────────────────────────────────
-function deleteRecord(id) {
+// ── Delete record ─────────────────────────────
+async function deleteRecord(id) {
+  if (state.hasServer) {
+    try {
+      await apiCall('DELETE', `/api/scans/${id}`);
+    } catch (err) {
+      console.error('deleteRecord API error:', err);
+      showToast('Server error: ' + err.message, 'error');
+      return;
+    }
+  }
   state.records = state.records.filter(r => r.id !== id);
   saveRecords();
   updateStats();
@@ -507,7 +630,7 @@ function closeEditModal() {
   editingId = null;
 }
 
-function submitEdit() {
+async function submitEdit() {
   const serial = els.editSerialInput.value.trim();
   if (!serial) { els.editError.textContent = 'กรุณากรอก Serial / Barcode Number'; return; }
   if (serial.length < 2) { els.editError.textContent = 'สั้นเกินไป – ขั้นต่ำ 2 ตัวอักษร'; return; }
@@ -522,8 +645,25 @@ function submitEdit() {
   const model = els.editModelInput.value.trim();
   const rec = state.records.find(r => r.id === editingId);
   if (!rec) return;
-  rec.serial = serial;
-  rec.model = model;
+
+  if (state.hasServer) {
+    try {
+      const updated = await apiCall('PUT', `/api/scans/${editingId}`, {
+        serial,
+        model,
+        type: rec.type,
+      });
+      rec.serial = updated.serial;
+      rec.model  = updated.model || '';
+    } catch (err) {
+      els.editError.textContent = 'Server error: ' + err.message;
+      return;
+    }
+  } else {
+    rec.serial = serial;
+    rec.model  = model;
+  }
+
   saveRecords();
   updateStats();
   renderRecords();
@@ -666,7 +806,7 @@ els.btnSaveSettings.addEventListener('click', saveSettings);
 els.settingsModal.addEventListener('click', e => { if (e.target === els.settingsModal) closeSettingsModal(); });
 
 // ── Init ──────────────────────────────────────────
-(function init() {
+(async function init() {
   updateStats();
   renderRecords();
   // Check camera availability
@@ -675,4 +815,7 @@ els.settingsModal.addEventListener('click', e => { if (e.target === els.settings
     els.btnToggle.disabled = true;
     showToast('Camera API not supported in this browser', 'error');
   }
+  // Detect server (non-blocking — UI จะ update เมื่อรู้ผล)
+  setServerIndicator(false); // เริ่มต้นแสดง Offline ก่อน
+  detectServer();
 })();
