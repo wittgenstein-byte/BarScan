@@ -5,9 +5,9 @@
 
 // ── API Config ────────────────────────────────────
 // เปลี่ยน BASE_URL ให้ตรงกับ server ที่ deploy
-const API_BASE = (typeof window !== 'undefined' && window.location.port !== '')
-  ? ''           // same-origin (เมื่อ serve ผ่าน Express)
-  : 'http://localhost:3001';  // เปิดจาก file:// หรือ dev server อื่น
+const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 'file:')
+  ? 'http://localhost:3001'  // เปิดจาก file:// ให้ชี้มาที่ local server
+  : '';                      // same-origin (เมื่อ serve ผ่าน Express หรือ public tunnel)
 
 // ── State ────────────────────────────────────────
 const state = {
@@ -43,15 +43,21 @@ async function apiCall(method, path, body) {
 
 // ── Server Detection ─────────────────────────────
 async function detectServer() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
+  
   try {
-    await fetch(API_BASE + '/api/health', { signal: AbortSignal.timeout(2000) });
+    await fetch(API_BASE + '/api/health', { signal: controller.signal });
+    clearTimeout(timeoutId);
     state.hasServer = true;
     setServerIndicator(true);
     // โหลด records จาก server แทน localStorage
     await loadRecordsFromServer();
     // sync settings จาก server
     await loadSettingsFromServer();
-  } catch {
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.warn('detectServer error:', err);
     state.hasServer = false;
     setServerIndicator(false);
   }
