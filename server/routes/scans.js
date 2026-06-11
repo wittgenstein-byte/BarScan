@@ -57,16 +57,17 @@ router.get('/export/csv', async (req, res) => {
 // ── POST /api/scans ───────────────────────────
 // บันทึก barcode ใหม่
 router.post('/', async (req, res) => {
-  const { serial, model = '', type = 'scanned' } = req.body ?? {};
+  const { serial, model = '', type = 'scanned', ts } = req.body ?? {};
 
   if (!serial || String(serial).trim().length < 2) {
     return res.status(400).json({ error: 'serial is required (min 2 chars)' });
   }
 
   try {
+    const scanTs = ts ? new Date(ts) : new Date();
     const [result] = await pool.query(
-      'INSERT INTO scans (serial, model, type, ts) VALUES (?, ?, ?, NOW())',
-      [String(serial).trim(), String(model).trim(), String(type).trim()]
+      'INSERT INTO scans (serial, model, type, ts) VALUES (?, ?, ?, ?)',
+      [String(serial).trim(), String(model).trim(), String(type).trim(), scanTs]
     );
     const [rows] = await pool.query(
       'SELECT * FROM scans WHERE id = ?',

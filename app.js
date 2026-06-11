@@ -17,6 +17,8 @@ const state = {
   isScanning: false,
   stream: null,
   facingMode: 'environment',
+  videoDevices: [],
+  activeDeviceId: null,
   torchOn: false,
   codeReader: null,
   filterText: '',
@@ -24,6 +26,7 @@ const state = {
   flashTimer: null,
   isModelLocked: false,
   hasServer: false,  // true เมื่อ ping server สำเร็จ
+  forceOffline: JSON.parse(localStorage.getItem('barscan_force_offline') || 'false'),
 };
 
 // ── API Helper ────────────────────────────────────
@@ -41,8 +44,53 @@ async function apiCall(method, path, body) {
   return res.json();
 }
 
-// ── Server Detection ─────────────────────────────
+// ── Server Sync & Detection ──────────────────────
+async function syncUnsyncedRecords() {
+  const unsynced = state.records.filter(r => r.unsynced);
+  if (unsynced.length === 0) return;
+
+  showToast(`กำลังซิงก์ข้อมูลออฟไลน์ (${unsynced.length} รายการ)...`, 'info');
+  
+  // Clone to avoid mutation and reverse to upload oldest first
+  const toSync = [...unsynced].reverse();
+  let successCount = 0;
+
+  for (const record of toSync) {
+    try {
+      await apiCall('POST', '/api/scans', {
+        serial: record.serial,
+        model: record.model,
+        type: record.type,
+        ts: record.ts
+      });
+      // Remove unsynced flag in local state
+      const localRec = state.records.find(r => r.id === record.id);
+      if (localRec) {
+        delete localRec.unsynced;
+      }
+      successCount++;
+    } catch (err) {
+      console.error('Failed to sync offline record:', record, err);
+      showToast(`ซิงก์ล้มเหลวที่รายการ: ${record.serial}`, 'error');
+      break;
+    }
+  }
+
+  if (successCount > 0) {
+    saveRecords();
+    showToast(`ซิงก์ข้อมูลสำเร็จ ${successCount} รายการ`, 'success');
+  }
+}
+
 async function detectServer() {
+  if (state.forceOffline) {
+    state.hasServer = false;
+    setServerIndicator(false, true);
+    return;
+  }
+
+  setServerIndicator(false, false, true); // Connecting state
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 2000);
   
@@ -51,6 +99,10 @@ async function detectServer() {
     clearTimeout(timeoutId);
     state.hasServer = true;
     setServerIndicator(true);
+    
+    // Sync any unsynced offline records before loading database records
+    await syncUnsyncedRecords();
+    
     // โหลด records จาก server แทน localStorage
     await loadRecordsFromServer();
     // sync settings จาก server
@@ -59,17 +111,32 @@ async function detectServer() {
     clearTimeout(timeoutId);
     console.warn('detectServer error:', err);
     state.hasServer = false;
-    setServerIndicator(false);
+    setServerIndicator(false, false);
   }
 }
 
-function setServerIndicator(online) {
-  const el = document.getElementById('server-indicator');
+function setServerIndicator(online, forced = false, connecting = false) {
+  const el = els.serverIndicator || document.getElementById('server-indicator');
   if (!el) return;
-  el.textContent = online ? '🟢 Server' : '🟡 Offline';
+  
+  if (connecting) {
+    el.textContent = '🟡 Connecting...';
+    el.title = 'กำลังตรวจสอบการเชื่อมต่อ... กดเพื่อบังคับ Offline';
+    el.className = 'server-indicator connecting';
+    return;
+  }
+
+  if (forced) {
+    el.textContent = '🟡 Offline (Manual)';
+    el.title = 'โหมด Offline แบบแมนนวล กดเพื่อเชื่อมต่อใหม่';
+    el.className = 'server-indicator offline forced';
+    return;
+  }
+
+  el.textContent = online ? '🟢 Online' : '🟡 Offline';
   el.title = online
-    ? 'Connected to backend server'
-    : 'No server — using localStorage';
+    ? 'เชื่อมต่อเซิร์ฟเวอร์เรียบร้อย กดเพื่อบังคับ Offline'
+    : 'ไม่ได้เชื่อมต่อเซิร์ฟเวอร์ — บันทึกข้อมูลลงเครื่อง กดเพื่อตรวจสอบใหม่';
   el.className = 'server-indicator ' + (online ? 'online' : 'offline');
 }
 
@@ -77,13 +144,18 @@ async function loadRecordsFromServer() {
   try {
     const rows = await apiCall('GET', '/api/scans');
     // แปลง field ให้ตรงกับ format ที่ frontend ใช้
-    state.records = rows.map(r => ({
+    const serverRecords = rows.map(r => ({
       id:     r.id,
       serial: r.serial,
       model:  r.model || '',
       type:   r.type,
       ts:     r.ts,
     }));
+    
+    // Preserve local unsynced records
+    const unsyncedRecords = state.records.filter(r => r.unsynced);
+    state.records = [...unsyncedRecords, ...serverRecords];
+    
     // sync กลับลง localStorage ด้วย
     localStorage.setItem('barscan_records', JSON.stringify(state.records));
     updateStats();
@@ -133,6 +205,7 @@ const els = {
   canvas: $('scan-canvas'),
   btnExport: $('btn-export'),
   btnClearAll: $('btn-clear-all'),
+  serverIndicator: $('server-indicator'),
   // Manual modal extras
   manualModelInput: $('input-manual-model'),
   // Sticky model
@@ -241,6 +314,7 @@ async function addRecord(serial, type = 'scanned', model = '') {
         model: finalModel,
         type,
         ts: new Date().toISOString(),
+        unsynced: true,
       };
     }
   } else {
@@ -251,6 +325,7 @@ async function addRecord(serial, type = 'scanned', model = '') {
       model: finalModel,
       type,
       ts: new Date().toISOString(),
+      unsynced: true,
     };
   }
 
@@ -368,24 +443,77 @@ function escHtml(s) {
 }
 
 // ── Camera ────────────────────────────────────────
+async function updateDeviceList() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    state.videoDevices = devices.filter(d => d.kind === 'videoinput');
+    
+    const activeTrack = state.stream?.getVideoTracks()[0];
+    if (activeTrack) {
+      const activeDevice = state.videoDevices.find(d => d.label === activeTrack.label);
+      if (activeDevice) {
+        state.activeDeviceId = activeDevice.deviceId;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to update device list:', e);
+  }
+}
+
 async function startCamera() {
   try {
     if (state.stream) stopCamera();
-    const constraints = {
-      video: {
-        facingMode: state.facingMode,
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-      audio: false,
-    };
-    state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // Try to pre-populate devices list if permission is already granted
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      state.videoDevices = devices.filter(d => d.kind === 'videoinput');
+    } catch (_) {}
+
+    let constraints;
+    if (state.activeDeviceId && state.videoDevices.some(d => d.deviceId === state.activeDeviceId)) {
+      constraints = {
+        video: {
+          deviceId: { exact: state.activeDeviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      };
+    } else {
+      constraints = {
+        video: {
+          facingMode: { ideal: state.facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      };
+    }
+
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      console.warn('Failed to start camera with ideal constraints, trying fallback...', err);
+      // Fallback constraints: remove specific resolution ideal properties
+      const fallbackConstraints = {
+        video: (state.activeDeviceId && state.videoDevices.some(d => d.deviceId === state.activeDeviceId))
+          ? { deviceId: state.activeDeviceId }
+          : { facingMode: { ideal: state.facingMode } },
+        audio: false,
+      };
+      state.stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+    }
+
     els.video.srcObject = state.stream;
     await els.video.play();
     state.isScanning = true;
     updateCameraUI(true);
     enableAuxControls();
     els.btnCapture.disabled = false;
+
+    // Refresh devices list so that labels are loaded
+    await updateDeviceList();
   } catch (err) {
     console.error('Camera error:', err);
     let msg = 'Camera access denied';
@@ -449,8 +577,39 @@ function disableAuxControls() {
 }
 
 async function flipCamera() {
-  state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment';
+  if (!state.videoDevices || state.videoDevices.length <= 1) {
+    // Fallback if we don't have multiple enumerated devices
+    state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment';
+    state.activeDeviceId = null;
+  } else {
+    // Cycle to next videoinput device
+    let currentIdx = state.videoDevices.findIndex(d => d.deviceId === state.activeDeviceId);
+    if (currentIdx === -1) {
+      // Find by active track label if index is not found
+      const activeTrack = state.stream?.getVideoTracks()[0];
+      if (activeTrack) {
+        currentIdx = state.videoDevices.findIndex(d => d.label === activeTrack.label);
+      }
+    }
+    const nextIdx = (currentIdx + 1) % state.videoDevices.length;
+    state.activeDeviceId = state.videoDevices[nextIdx].deviceId;
+
+    // Set facingMode state according to device label
+    const label = state.videoDevices[nextIdx].label.toLowerCase();
+    if (label.includes('front') || label.includes('user')) {
+      state.facingMode = 'user';
+    } else {
+      state.facingMode = 'environment';
+    }
+  }
+
   await startCamera();
+
+  // Show visual feedback to the user about which camera is active
+  const activeTrack = state.stream?.getVideoTracks()[0];
+  if (activeTrack && activeTrack.label) {
+    showToast('Switched to: ' + activeTrack.label, 'success');
+  }
 }
 
 async function toggleTorch() {
@@ -809,6 +968,19 @@ els.btnSettings.addEventListener('click', openSettingsModal);
 els.btnCloseSettings.addEventListener('click', closeSettingsModal);
 els.btnCancelSettings.addEventListener('click', closeSettingsModal);
 els.btnSaveSettings.addEventListener('click', saveSettings);
+els.serverIndicator.addEventListener('click', () => {
+  state.forceOffline = !state.forceOffline;
+  localStorage.setItem('barscan_force_offline', JSON.stringify(state.forceOffline));
+  
+  if (state.forceOffline) {
+    state.hasServer = false;
+    setServerIndicator(false, true);
+    showToast('โหมด Offline ถูกเปิดใช้งาน (บันทึกข้อมูลในเครื่องเท่านั้น)', 'info');
+  } else {
+    showToast('กำลังเชื่อมต่อเซิร์ฟเวอร์...', 'info');
+    detectServer();
+  }
+});
 els.settingsModal.addEventListener('click', e => { if (e.target === els.settingsModal) closeSettingsModal(); });
 
 // ── Init ──────────────────────────────────────────

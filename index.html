@@ -11,6 +11,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>BarScan – Barcode Serial Scanner</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -38,7 +40,7 @@
         <span class="logo-text">BarScan</span>
       </div>
       <div class="header-actions">
-        <span id="server-indicator" class="server-indicator offline" title="Checking server...">🟡 Offline</span>
+        <span id="server-indicator" class="server-indicator offline" role="button" tabindex="0" title="Checking server...">🟡 Offline</span>
         <button id="btn-settings" class="icon-btn" title="ตั้งค่า" aria-label="Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>

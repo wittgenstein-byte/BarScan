@@ -1,0 +1,15 @@
+# ───────────────────────────────────────
+# BarScan Git Ignore Rules (Root)
+# ───────────────────────────────────────
+
+# Log files
+ngrok_run.log
+*.log
+
+# Node & server files (just in case they are run in root)
+node_modules/
+.env
+
+# System files
+.DS_Store
+Thumbs.db
