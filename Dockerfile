@@ -11,7 +11,7 @@ COPY server/package*.json ./server/
 
 # Set working directory to the server folder to install dependencies
 WORKDIR /app/server
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy the rest of the server files
 COPY server/ ./
