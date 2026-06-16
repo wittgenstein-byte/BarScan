@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      # Map configurable host's port (default 3001) to container's Express API port 3001
+      # To change the port, set HOST_PORT in your .env file
+      - "${HOST_PORT:-3001}:3001"
+    restart: always
+    environment:
+      - PORT=3001
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-barscan_user}
+      - DB_PASS=${DB_PASS:-barscan_secure_password}
+      - DB_NAME=${DB_NAME:-barscan}
+      - DB_SSL=false
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secure_password}
+      MYSQL_DATABASE: ${DB_NAME:-barscan}
+      MYSQL_USER: ${DB_USER:-barscan_user}
+      MYSQL_PASSWORD: ${DB_PASS:-barscan_secure_password}
+    ports:
+      - "127.0.0.1:3306:3306" # Bind to localhost on EC2 to keep database secure
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./server/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db_data:
